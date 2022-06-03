@@ -49,20 +49,20 @@ type piChunk struct {
 //  输出
 func log(res result) {
 	if out2file || outJson {
-		filename := fmt.Sprintf("pi_%d.json", programTime.UnixMicro())
-		fd, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			panic(err.Error())
-		}
 		resJson, _ := json.Marshal(res)
 		if out2file {
+			filename := fmt.Sprintf("pi_%d.json", programTime.UnixMicro())
+			fd, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if err != nil {
+				panic(err.Error())
+			}
 			_, err = fd.Write(resJson)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
 		}
 		if outJson {
-			fmt.Println(resJson)
+			fmt.Println(string(resJson))
 		}
 	} else {
 		fmt.Printf("范围: %d - %d \n", res.Range.Start, res.Range.End)
@@ -97,26 +97,32 @@ func bbp(n uint32, j int64, mul *big.Float) *big.Float {
 	s := big.NewFloat(0).SetPrec(prec)
 	// sum(16^(n-k) mod (8k+1) / (8k+1)), from 0 to n
 	k8 := big.NewInt(j)
+	k8f := new(big.Float).SetInt(k8)
+	a := new(big.Int)
+	b := new(big.Float).SetPrec(prec)
 	for k := uint32(0); k <= n; k++ {
 		nk := big.NewInt(int64(n - k))
 		// 16^(n-k) mod (8k+1)
-		a := new(big.Int).Exp(intSixteen, nk, k8)
+		a.Exp(intSixteen, nk, k8)
 		// / (8k+1)
-		b := new(big.Float).SetPrec(prec).SetInt(a)
-		b.Quo(b, new(big.Float).SetInt(k8))
+		b.SetInt(a)
+		b.Quo(b, k8f)
 
 		s.Add(s, b)
 		k8.Add(k8, intEight)
+		k8f.SetInt(k8)
 	}
 	// fmt.Println(s)
 
 	//sum(16^(n-k) / (8k+1)), from n+1 to inf
 	num := big.NewFloat(1 / 16)
+	frac := new(big.Float).SetPrec(prec).Copy(num)
 	for k := int64(n + 1); k < int64((n+1)*2+uint32(prec)); k++ {
-		frac := new(big.Float).SetPrec(prec).Quo(num, new(big.Float).SetInt(k8))
+		frac.Quo(num, k8f)
 		s.Add(s, frac)
 		num.Quo(num, floatSixteen)
 		k8.Add(k8, intEight)
+		k8f.SetInt(k8)
 	}
 	//fmt.Println(s)
 	s.Mul(mul, fpart(s))
@@ -126,14 +132,13 @@ func bbp(n uint32, j int64, mul *big.Float) *big.Float {
 // bit 单独计算16进制pi的某一位
 func bit(n uint32) string {
 	p1 := bbp(n, 1, floatFour)
-	p2 := bbp(n, 4, floatTwo)
-	p3 := bbp(n, 5, floatOne)
-	p4 := bbp(n, 6, floatOne)
+	p1.Sub(p1, bbp(n, 4, floatTwo))
+	p1.Sub(p1, bbp(n, 5, floatOne))
+	p1.Sub(p1, bbp(n, 6, floatOne))
 
 	// a - b - c - d === (a-b) - (c+d)
-	pi := new(big.Float).SetPrec(prec).Sub(p1.Sub(p1, p2), p3.Add(p3, p4))
-	pi = pi.Mul(floatSixteen, fpart(pi))
-	pInt, _ := pi.Int(nil)
+	p1.Mul(floatSixteen, fpart(p1))
+	pInt, _ := p1.Int(nil)
 	return fmt.Sprintf("%x", pInt)
 }
 
